@@ -1,0 +1,50 @@
+{
+  "name": "@gestiactivites/server",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "start:pm2": "pm2 start ecosystem.config.js --env production",
+    "reload:pm2": "pm2 reload gestiactivites-api",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node-pg-migrate up --envPath .env",
+    "db:migrate:down": "node-pg-migrate down --envPath .env",
+    "db:migrate:create": "node-pg-migrate create --envPath .env"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@gestiactivites/shared": "workspace:*",
+    "@sentry/node": "^8.0.0",
+    "@supabase/supabase-js": "^2.43.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^5.0.0",
+    "express-rate-limit": "^7.3.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.12.0",
+    "resend": "^3.3.0",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/morgan": "^1.9.9",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.0.0",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/pg": "^8.11.0",
+    "node-pg-migrate": "^7.6.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.0"
+  }
+}

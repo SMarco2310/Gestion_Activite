@@ -1,0 +1,7 @@
+packages:
+  - 'shared'
+  - 'client'
+  - 'server'
+onlyBuiltDependencies:
+  - 'esbuild'
+  - 'core-js'
