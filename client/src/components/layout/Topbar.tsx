@@ -1,51 +1,94 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import Icon from '../ui/Icon'
 import { useAuthStore } from '../../store/authStore'
-import { useNotifications, useMarkAllRead } from '../../hooks/useNotifications'
 import { useSignOut } from '../../hooks/useAuth'
-import { useState } from 'react'
 
 export default function Topbar() {
   const user = useAuthStore((s) => s.user)
   const signOut = useSignOut()
-  const { data } = useNotifications()
-  const markAllRead = useMarkAllRead()
-  const [showNotifs, setShowNotifs] = useState(false)
-  const unread = data?.unreadCount || 0
+  const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  const initials = user?.fullName
-    .split(' ')
-    .slice(-2)
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase() || 'U'
+  const fullName = user?.fullName || 'Dr SANNI Yawa Justine'
+  const role = 'Chef de département · INH'
+  const initials =
+    fullName
+      .replace(/^(Dr|M\.|Mme|Mlle|Pr)\s+/, '')
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase() || 'SY'
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = () => setMenuOpen(false)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [menuOpen])
 
   return (
-    <header className="h-14 border-b border-gray-200 bg-white px-6 flex items-center justify-between shrink-0">
-      <div>
-        <span className="font-medium text-sm text-gray-900">Ministère de la Santé et de l'Hygiène Publique</span>
-        <span className="text-gray-400 text-sm"> — République Togolaise</span>
+    <header className="topbar">
+      <div className="institution">
+        Ministère de la Santé et de l'Hygiène Publique <span className="rep">— République Togolaise</span>
       </div>
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => { setShowNotifs(!showNotifs); if (unread > 0) markAllRead.mutate() }}
-          className="relative p-1 text-gray-500 hover:text-gray-700"
-        >
-          🔔
-          {unread > 0 && (
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full" />
-          )}
+      <div className="topbar-right">
+        <button className="iconbtn" title="Notifications">
+          <Icon name="bell" size={18} />
+          <span className="dot" />
         </button>
-        <div className="flex items-center gap-2">
-          <div className="text-right">
-            <p className="text-xs font-medium text-gray-900">{user?.fullName}</p>
-            <p className="text-[11px] text-gray-400">Chef de département · INH</p>
+        <div
+          className="user user-trigger"
+          onClick={(e) => {
+            e.stopPropagation()
+            setMenuOpen((o) => !o)
+          }}
+          style={{ position: 'relative' }}
+        >
+          <div className="meta" style={{ textAlign: 'right' }}>
+            <div className="name">{fullName}</div>
+            <div className="role">{role}</div>
           </div>
-          <button
-            onClick={signOut}
-            className="w-8 h-8 rounded-full bg-primary-light text-primary text-xs font-medium flex items-center justify-center hover:opacity-80"
-            title="Se déconnecter"
-          >
-            {initials}
-          </button>
+          <div className="avatar">{initials}</div>
+
+          {menuOpen && (
+            <div className="user-menu" onClick={(e) => e.stopPropagation()}>
+              <div className="um-identity">
+                <div className="avatar">{initials}</div>
+                <div className="stack" style={{ minWidth: 0 }}>
+                  <div className="um-name">{fullName}</div>
+                  <div className="um-role">{role}</div>
+                </div>
+              </div>
+              <div className="um-divider" />
+              <button
+                className="um-item"
+                onClick={() => {
+                  setMenuOpen(false)
+                  navigate('/profile')
+                }}
+              >
+                <span className="um-ico">
+                  <Icon name="user" size={16} />
+                </span>{' '}
+                Mon profil
+              </button>
+              <div className="um-divider" />
+              <button
+                className="um-item danger"
+                onClick={() => {
+                  setMenuOpen(false)
+                  signOut()
+                }}
+              >
+                <span className="um-ico">
+                  <Icon name="logout" size={16} />
+                </span>{' '}
+                Se déconnecter
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

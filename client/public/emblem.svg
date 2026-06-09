@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 150" width="120" height="150" role="img" aria-label="Armoiries de la République Togolaise">
+  <defs>
+    <clipPath id="oval"><ellipse cx="60" cy="78" rx="46" ry="58"/></clipPath>
+  </defs>
+  <ellipse cx="60" cy="78" rx="46" ry="58" fill="#ffffff" stroke="#0E7C4A" stroke-width="3"/>
+  <g clip-path="url(#oval)">
+    <rect x="14" y="20" width="92" height="116" fill="#ffffff"/>
+    <!-- banner top -->
+    <path d="M14 34 Q60 18 106 34 L106 46 Q60 30 14 46 Z" fill="#0E7C4A"/>
+    <!-- central shield with RT -->
+    <rect x="44" y="58" width="32" height="40" rx="4" fill="#FFCE00" stroke="#0E7C4A" stroke-width="2"/>
+    <text x="60" y="84" text-anchor="middle" font-family="Public Sans, sans-serif" font-weight="800" font-size="16" fill="#C03A2B">RT</text>
+    <!-- supporters (stylised) -->
+    <circle cx="30" cy="80" r="9" fill="#C03A2B"/>
+    <circle cx="90" cy="80" r="9" fill="#C03A2B"/>
+    <!-- base -->
+    <path d="M30 112 Q60 124 90 112 L90 120 Q60 132 30 120 Z" fill="#0E7C4A"/>
+    <!-- stars -->
+    <g fill="#FFCE00">
+      <polygon points="60,40 62,46 68,46 63,50 65,56 60,52 55,56 57,50 52,46 58,46"/>
+    </g>
+  </g>
+</svg>

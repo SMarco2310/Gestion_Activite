@@ -21,6 +21,8 @@ import ManageParticipantsPage from './pages/activities/ManageParticipantsPage'
 import ManageConflictsPage from './pages/activities/ManageConflictsPage'
 import CalendarPage from './pages/calendar/CalendarPage'
 import ConflictsPage from './pages/conflicts/ConflictsPage'
+import ExportsPage from './pages/exports/ExportsPage'
+import ProfilePage from './pages/profile/ProfilePage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -50,6 +52,8 @@ export default function App() {
             <Route path="/activities/:id/conflicts" element={<ManageConflictsPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/conflicts" element={<ConflictsPage />} />
+            <Route path="/exports" element={<ExportsPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Routes>
       </BrowserRouter>

@@ -1,4 +1,5 @@
-// TODO: implement ConflictsPage
+import ConflictResolution from '../../components/conflicts/ConflictResolution'
+
 export default function ConflictsPage() {
-  return <div className="p-6"><h1 className="text-xl font-medium">ConflictsPage</h1></div>
+  return <ConflictResolution />
 }
