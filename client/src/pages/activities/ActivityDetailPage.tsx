@@ -1,8 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import Icon from '../../components/ui/Icon'
 import { StatusBadge, DetailPerson } from '../../components/ui/common'
-import { DETAIL, DET_PARTICIPANTS, DET_FACILITATORS } from '../../lib/mock'
+import api from '../../lib/axios'
+import { useActivity, useAddParticipant } from '../../hooks/useActivities'
+import { deptMeta, STATUS_LABEL, TYPE_LABEL, fmtDate, fmtRange, fmtDateTime, type ApiParticipant, type ApiActivityConflict } from '../../lib/api'
+import type { PersonRow } from '../../lib/mock'
 
 function KV({ label, children, last }: { label: string; children: ReactNode; last?: boolean }) {
   return (
@@ -13,18 +17,78 @@ function KV({ label, children, last }: { label: string; children: ReactNode; las
   )
 }
 
+const AVAIL: Record<ApiParticipant['availabilityStatus'], PersonRow['status']> = {
+  disponible: 'Disponible',
+  conflit: 'Conflit',
+  nouveau: 'Nouveau',
+}
+
+function duration(start: string, end: string) {
+  const days = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1
+  return (days > 0 ? days : 1) + ' jour' + (days > 1 ? 's' : '')
+}
+
 export default function ActivityDetailPage() {
   const navigate = useNavigate()
-  const { id = 'A1' } = useParams()
-  const d = DETAIL
-  const conflicts = DET_PARTICIPANTS.filter((p) => p.status === 'Conflit').length
-  const [addFac, setAddFac] = useState(true)
+  const { id } = useParams()
+  const { data: d, isLoading, isError } = useActivity(id)
+  const addFacMut = useAddParticipant(id || '')
+
+  const [addFac, setAddFac] = useState(false)
   const [facName, setFacName] = useState('')
   const [facRole, setFacRole] = useState('')
 
-  const sortedParticipants = [...DET_PARTICIPANTS].sort(
-    (a, b) => (a.status === 'Conflit' ? 0 : 1) - (b.status === 'Conflit' ? 0 : 1),
+  if (isLoading) return <div className="content"><div className="muted" style={{ padding: 40 }}>Chargement…</div></div>
+  if (isError || !d) return <div className="content"><div className="muted" style={{ padding: 40 }}>Activité introuvable.</div></div>
+
+  const dm = deptMeta(d.department)
+  const participants = d.participants.filter((p) => p.participantType === 'participant')
+  const facilitators = d.participants.filter((p) => p.participantType === 'facilitateur')
+  const conflicts = d.conflictsAsMain.length
+
+  // Map conflict notes by participant name
+  const noteFor = (name: string) => {
+    const c: ApiActivityConflict | undefined = d.conflictsAsMain.find((x) => x.participantName === name)
+    if (!c) return undefined
+    return `${c.conflictingActivity.title}, ${fmtRange(c.conflictingActivity.startDate, c.conflictingActivity.endDate)}`
+  }
+
+  const toRow = (p: ApiParticipant): PersonRow => ({
+    name: p.fullName,
+    role: p.titleRole,
+    status: AVAIL[p.availabilityStatus],
+    note: p.availabilityStatus === 'conflit' ? noteFor(p.fullName) : undefined,
+  })
+
+  const sortedParticipants = [...participants].sort(
+    (a, b) => (a.availabilityStatus === 'conflit' ? 0 : 1) - (b.availabilityStatus === 'conflit' ? 0 : 1),
   )
+
+  const doc = d.documents[0]
+
+  async function download(kind: 'pdf' | 'excel') {
+    const tid = toast.loading('Génération du document…')
+    try {
+      const res = await api.get(`/activities/${id}/export/${kind}`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `activite-${id}.${kind === 'pdf' ? 'pdf' : 'xlsx'}`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`Document ${kind === 'pdf' ? 'PDF' : 'Excel'} téléchargé`, { id: tid })
+    } catch {
+      toast.error("Échec de l'export", { id: tid })
+    }
+  }
+
+  function submitFac() {
+    if (!facName.trim()) return
+    addFacMut.mutate(
+      { fullName: facName.trim(), titleRole: facRole.trim(), participantType: 'facilitateur' },
+      { onSuccess: () => { setAddFac(false); setFacName(''); setFacRole('') } },
+    )
+  }
 
   return (
     <div className="content">
@@ -40,22 +104,22 @@ export default function ActivityDetailPage() {
         <div style={{ minWidth: 0 }}>
           <h1 className="page-title" style={{ fontSize: 24, lineHeight: 1.22, maxWidth: 760 }}>{d.title}</h1>
           <div className="row" style={{ gap: 0, flexWrap: 'wrap', marginTop: 12, rowGap: 8 }}>
-            <span className="meta-chip mono">{d.ref}</span>
+            <span className="meta-chip mono">{d.referenceNumber || '—'}</span>
             <span className="meta-sep" />
-            <span className="meta-chip"><Icon name="calendar" size={14} />{d.rangeShort}</span>
+            <span className="meta-chip"><Icon name="calendar" size={14} />{fmtRange(d.startDate, d.endDate)}</span>
             <span className="meta-sep" />
             <span className="meta-chip"><Icon name="mapPin" size={14} />{d.venue}</span>
             <span className="meta-sep" />
             {conflicts > 0 && (
               <span className="badge red" style={{ marginRight: 10 }}>
-                <span className="pip" />{conflicts} conflits
+                <span className="pip" />{conflicts} conflit{conflicts > 1 ? 's' : ''}
               </span>
             )}
-            <StatusBadge status={d.status} />
+            <StatusBadge status={STATUS_LABEL[d.status]} />
           </div>
         </div>
         <div className="row" style={{ gap: 10, flex: 'none' }}>
-          <button className="btn"><Icon name="download" size={16} /> Exporter</button>
+          <button className="btn" onClick={() => download('pdf')}><Icon name="download" size={16} /> Exporter</button>
           <button className="btn" onClick={() => navigate(`/activities/${id}/edit`)}><Icon name="edit" size={15} /> Modifier</button>
         </div>
       </div>
@@ -66,8 +130,8 @@ export default function ActivityDetailPage() {
           <div className="row" style={{ gap: 11 }}>
             <span style={{ color: 'var(--red)' }}><Icon name="alert" size={20} /></span>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 13.5 }}>{conflicts} participants en conflit de planification</div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 1 }}>Certains agents sont programmés sur des activités qui se chevauchent. Arbitrez ces conflits avant le démarrage de l'atelier.</div>
+              <div style={{ fontWeight: 800, fontSize: 13.5 }}>{conflicts} participant{conflicts > 1 ? 's' : ''} en conflit de planification</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ink-2)', marginTop: 1 }}>Certains agents sont programmés sur des activités qui se chevauchent. Arbitrez ces conflits avant le démarrage de l'activité.</div>
             </div>
           </div>
           <button className="btn primary" style={{ flex: 'none' }} onClick={() => navigate(`/activities/${id}/conflicts`)}>
@@ -83,33 +147,36 @@ export default function ActivityDetailPage() {
             <div className="card-head"><h2 className="card-title">Informations générales</h2></div>
             <div className="card-body" style={{ paddingTop: 4, paddingBottom: 6 }}>
               <KV label="Type d'activité">
-                <span className="badge" style={{ color: d.deptColor, background: d.deptBg, borderColor: d.deptLine }}>{d.type}</span>
+                <span className="badge" style={{ color: dm.color, background: dm.bg, borderColor: dm.line }}>{TYPE_LABEL[d.type]}</span>
               </KV>
-              <KV label="Département organisateur">{d.deptName}</KV>
-              <KV label="Référence du document"><span className="mono">{d.ref}</span></KV>
-              <KV label="Date de début">{d.start}</KV>
-              <KV label="Date de fin">{d.end}</KV>
-              <KV label="Durée">{d.duration}</KV>
+              <KV label="Département organisateur">{dm.name || d.department}</KV>
+              <KV label="Référence du document"><span className="mono">{d.referenceNumber || '—'}</span></KV>
+              <KV label="Date de début">{fmtDate(d.startDate)}</KV>
+              <KV label="Date de fin">{fmtDate(d.endDate)}</KV>
+              <KV label="Durée">{duration(d.startDate, d.endDate)}</KV>
               <KV label="Lieu">{d.venue}</KV>
-              <KV label="Soumis par">{d.submitter}</KV>
-              <KV label="Date de soumission" last>{d.submittedOn}</KV>
+              <KV label="Soumis par">{d.submittedBy?.fullName || '—'}</KV>
+              <KV label="Date de soumission" last>{fmtDateTime(d.submittedAt)}</KV>
             </div>
           </div>
 
           <div className="card">
             <div className="card-head"><h2 className="card-title">Document TDR</h2></div>
             <div className="card-body" style={{ paddingTop: 14 }}>
-              <div className="between" style={{ border: '1px solid var(--line)', borderRadius: 6, padding: '12px 14px' }}>
-                <div className="row" style={{ gap: 12, minWidth: 0 }}>
-                  <span style={{ width: 40, height: 40, borderRadius: 6, flex: 'none', background: 'var(--red-bg)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="file" size={20} /></span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>TDR_atelier_manuscrits_scientifiques.pdf</div>
-                    <div className="muted" style={{ fontSize: 12 }}>320 Ko · PDF</div>
+              {doc ? (
+                <div className="between" style={{ border: '1px solid var(--line)', borderRadius: 6, padding: '12px 14px' }}>
+                  <div className="row" style={{ gap: 12, minWidth: 0 }}>
+                    <span style={{ width: 40, height: 40, borderRadius: 6, flex: 'none', background: 'var(--red-bg)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="file" size={20} /></span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.filename}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>{Math.round(doc.fileSizeBytes / 1024)} Ko · {doc.mimeType.includes('pdf') ? 'PDF' : 'Word'}</div>
+                    </div>
                   </div>
+                  {doc.downloadUrl && <a className="link" href={doc.downloadUrl} target="_blank" rel="noreferrer" style={{ flex: 'none' }}><Icon name="download" size={14} /> Télécharger</a>}
                 </div>
-                <a className="link" style={{ flex: 'none' }}><Icon name="download" size={14} /> Télécharger</a>
-              </div>
-              <button className="btn" style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}><Icon name="plus" size={15} /> Ajouter un document</button>
+              ) : (
+                <div className="muted" style={{ fontSize: 13 }}>Aucun document joint.</div>
+              )}
             </div>
           </div>
         </div>
@@ -118,13 +185,14 @@ export default function ActivityDetailPage() {
         <div className="stack" style={{ gap: 20 }}>
           <div className="card">
             <div className="card-head">
-              <h2 className="card-title">Participants ({d.totalParticipants})</h2>
-              {conflicts > 0 && <span className="badge red"><span className="pip" />{conflicts} conflits</span>}
+              <h2 className="card-title">Participants ({participants.length})</h2>
+              {conflicts > 0 && <span className="badge red"><span className="pip" />{conflicts} conflit{conflicts > 1 ? 's' : ''}</span>}
             </div>
             <div style={{ maxHeight: 520, overflowY: 'auto', padding: '2px 18px 0' }}>
+              {sortedParticipants.length === 0 && <div className="muted" style={{ padding: '14px 0', fontSize: 13 }}>Aucun participant.</div>}
               {sortedParticipants.map((p, i) => (
-                <div key={i} style={{ borderBottom: i < sortedParticipants.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                  <DetailPerson p={p} />
+                <div key={p.id} style={{ borderBottom: i < sortedParticipants.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <DetailPerson p={toRow(p)} />
                 </div>
               ))}
             </div>
@@ -137,11 +205,11 @@ export default function ActivityDetailPage() {
           </div>
 
           <div className="card">
-            <div className="card-head"><h2 className="card-title">Facilitateurs / Intervenants ({DET_FACILITATORS.length})</h2></div>
+            <div className="card-head"><h2 className="card-title">Facilitateurs / Intervenants ({facilitators.length})</h2></div>
             <div className="card-body" style={{ paddingTop: 2, paddingBottom: addFac ? 0 : 14 }}>
-              {DET_FACILITATORS.map((p, i) => (
-                <div key={i} style={{ borderBottom: i < DET_FACILITATORS.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                  <DetailPerson p={p} badge={false} />
+              {facilitators.map((p, i) => (
+                <div key={p.id} style={{ borderBottom: i < facilitators.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <DetailPerson p={toRow(p)} badge={false} />
                 </div>
               ))}
               {!addFac && (
@@ -165,7 +233,7 @@ export default function ActivityDetailPage() {
                   </div>
                   <div className="row" style={{ gap: 10, marginTop: 2 }}>
                     <button className="btn" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setAddFac(false); setFacName(''); setFacRole('') }}>Annuler</button>
-                    <button className="btn primary" style={{ flex: 1, justifyContent: 'center' }} disabled={!facName.trim()} onClick={() => { setAddFac(false); setFacName(''); setFacRole('') }}><Icon name="check" size={15} /> Ajouter</button>
+                    <button className="btn primary" style={{ flex: 1, justifyContent: 'center' }} disabled={!facName.trim() || addFacMut.isPending} onClick={submitFac}><Icon name="check" size={15} /> Ajouter</button>
                   </div>
                 </div>
               </div>

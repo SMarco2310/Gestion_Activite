@@ -1,3 +1,4 @@
+
 import { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -61,20 +62,22 @@ export const signIn = async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, error: 'Identifiants incorrects' })
     }
 
-    if (!user.emailVerified) {
-      return res.status(403).json({ success: false, error: 'Veuillez vérifier votre email avant de vous connecter' })
-    }
-
+    // Verify the password BEFORE revealing account state, otherwise the
+    // email-verification branch leaks which emails are registered.
     const valid = await bcrypt.compare(password, user.passwordHash)
     if (!valid) {
       logger.warn('Failed login attempt', { email })
       return res.status(401).json({ success: false, error: 'Identifiants incorrects' })
     }
 
+    if (!user.emailVerified) {
+      return res.status(403).json({ success: false, error: 'Veuillez vérifier votre email avant de vous connecter' })
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, fullName: user.fullName },
       process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as jwt.SignOptions['expiresIn'] }
     )
 
     logger.info('User logged in', { userId: user.id })

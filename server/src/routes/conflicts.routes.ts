@@ -1,10 +1,10 @@
-import { Router } from 'express'
+import { Router, type Router as RouterType } from 'express'
 import { getConflicts, getActivityConflicts, resolveConflict } from '../controllers/conflicts.controller'
 import { authenticate } from '../middleware/auth.middleware'
 import { validate } from '../middleware/validate.middleware'
 import { resolveConflictSchema } from '@gestiactivites/shared'
 
-const router = Router()
+const router: RouterType = Router()
 
 router.use(authenticate)
 

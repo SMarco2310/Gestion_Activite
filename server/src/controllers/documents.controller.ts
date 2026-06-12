@@ -1,5 +1,7 @@
 import { Response } from 'express'
 import { documentService } from '../services/document.service'
+import { queryOne } from '../lib/db'
+import { getActivityOwner, canMutateActivity } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -7,6 +9,14 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, error: 'Fichier requis' })
     const { activityId } = req.body
+    if (!activityId) return res.status(400).json({ success: false, error: 'activityId requis' })
+
+    const owner = await getActivityOwner(activityId)
+    if (owner == null) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
+    if (!canMutateActivity(owner, req.user!)) {
+      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à ajouter un document à cette activité' })
+    }
+
     const document = await documentService.upload(req.file, activityId, req.user!.id)
     res.status(201).json({ success: true, data: document })
   } catch (error) {
@@ -28,7 +38,18 @@ export const extractDocument = async (req: AuthRequest, res: Response) => {
 
 export const deleteDocument = async (req: AuthRequest, res: Response) => {
   try {
-    await documentService.delete(req.params.id)
+    const doc = await queryOne<{ activityId: string }>(
+      'SELECT "activityId" FROM documents WHERE id = $1',
+      [req.params.id]
+    )
+    if (!doc) return res.status(404).json({ success: false, error: 'Document non trouvé' })
+
+    const owner = await getActivityOwner(doc.activityId)
+    if (!canMutateActivity(owner, req.user!)) {
+      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à supprimer ce document' })
+    }
+
+    await documentService.delete(req.params.id as string)
     res.json({ success: true, message: 'Document supprimé' })
   } catch (error) {
     logger.error('DeleteDocument error', { error })

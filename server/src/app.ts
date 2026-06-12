@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { type Express } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
@@ -18,7 +18,11 @@ import healthRoutes from './routes/health.routes'
 // Init Sentry first — before everything else
 initSentry()
 
-const app = express()
+const app: Express = express();
+
+// Trust the first proxy hop so express-rate-limit keys on the real client IP
+// (not the proxy's) when deployed behind a reverse proxy / load balancer.
+app.set('trust proxy', 1)
 
 // ─── Security middleware ───────────────────────────────────────────
 app.use(helmet())

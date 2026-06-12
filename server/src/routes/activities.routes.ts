@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type Router as RouterType } from 'express'
 import {
   getActivities, getActivity, createActivity,
   updateActivity, deleteActivity, getCalendarActivities,
@@ -8,7 +8,7 @@ import { authenticate } from '../middleware/auth.middleware'
 import { validate } from '../middleware/validate.middleware'
 import { createActivitySchema, updateActivitySchema } from '@gestiactivites/shared'
 
-const router = Router()
+const router: RouterType = Router()
 
 router.use(authenticate)
 

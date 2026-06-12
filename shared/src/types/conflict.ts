@@ -10,7 +10,7 @@ export interface Conflict {
   conflictingActivityDates: string
   conflictingDepartment: string
   participantName: string
-  status: ConflictStatus
+  status: ConflictStatus 
   resolution: ConflictResolution | null
   resolvedBy: string | null
   replacementName: string | null

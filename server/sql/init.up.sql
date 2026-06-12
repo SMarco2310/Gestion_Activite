@@ -5,7 +5,7 @@
 CREATE TYPE "UserRole" AS ENUM ('chef_departement', 'admin');
 CREATE TYPE "ActivityStatus" AS ENUM ('brouillon', 'soumis', 'actif', 'termine', 'archive');
 CREATE TYPE "ActivityType" AS ENUM ('atelier', 'formation', 'mission', 'reunion', 'autre');
-CREATE TYPE "ParticipantType" AS ENUM ('participant', 'facilitateur');
+CREATE TYPE "ParticipantType" AS ENUM ('participant', 'facilitateur');--I got to check this later as we might not need facilitators
 CREATE TYPE "AvailabilityStatus" AS ENUM ('disponible', 'conflit', 'nouveau');
 CREATE TYPE "ConflictStatus" AS ENUM ('en_attente', 'resolu', 'ignore');
 CREATE TYPE "ConflictResolution" AS ENUM ('retire', 'remplace', 'ignore');
@@ -95,7 +95,7 @@ CREATE TABLE "activity_history" (
   "id" TEXT NOT NULL,
   "activityId" TEXT NOT NULL,
   "eventType" "HistoryEventType" NOT NULL,
-  "actorName" TEXT NOT NULL,
+  "actorName" TEXT NOT NULL,--What is actor name here 
   "metadata" JSONB NOT NULL DEFAULT '{}',
   "occurredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "activity_history_pkey" PRIMARY KEY ("id")

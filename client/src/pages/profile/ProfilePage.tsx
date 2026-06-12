@@ -1,10 +1,25 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { toast } from 'sonner'
 import Icon from '../../components/ui/Icon'
+import { useAuthStore } from '../../store/authStore'
+import { deptMeta } from '../../lib/api'
+
+const ROLE_LABEL: Record<string, string> = { chef_departement: 'Chef de département', admin: 'Administrateur' }
 
 export default function ProfilePage() {
+  const user = useAuthStore((s) => s.user)
+  const baseName = user?.fullName || 'Utilisateur'
+  const baseDept = user?.department || ''
+  const email = user?.email || '—'
+  const roleLabel = ROLE_LABEL[user?.role || ''] || 'Utilisateur'
+  const deptShort = deptMeta(baseDept).short
+  const userInitials = baseName.replace(/^(Dr|M\.|Mme|Mlle|Pr)\s+/, '').split(/\s+/).slice(0, 2).map((n) => n[0]).join('').toUpperCase() || 'U'
+
   const [photoZone, setPhotoZone] = useState(true)
-  const [name, setName] = useState('Dr SANNI Yawa Justine')
-  const [dept, setDept] = useState("Institut National d'Hygiène")
+  const [photo, setPhoto] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement | null>(null)
+  const [name, setName] = useState(baseName)
+  const [dept, setDept] = useState(baseDept)
   const [banner, setBanner] = useState<null | 'unsaved' | 'saved'>(null)
   const [cur, setCur] = useState('')
   const [npw, setNpw] = useState('')
@@ -13,15 +28,16 @@ export default function ProfilePage() {
   const [s2, setS2] = useState(false)
   const [s3, setS3] = useState(false)
 
-  const dirty = name !== 'Dr SANNI Yawa Justine' || dept !== "Institut National d'Hygiène"
+  const dirty = name !== baseName || dept !== baseDept
 
   function saveInfo() {
+    // No backend endpoint for profile updates yet — local confirmation only.
     setBanner('saved')
     setTimeout(() => setBanner((b) => (b === 'saved' ? null : b)), 3000)
   }
   function cancelInfo() {
-    setName('Dr SANNI Yawa Justine')
-    setDept("Institut National d'Hygiène")
+    setName(baseName)
+    setDept(baseDept)
     setBanner(null)
   }
   function onEdit(setter: (v: string) => void) {
@@ -29,6 +45,22 @@ export default function ProfilePage() {
       setter(e.target.value)
       setBanner('unsaved')
     }
+  }
+  function processPhoto(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('Veuillez choisir une image (JPG, PNG).'); return }
+    if (file.size > 2 * 1024 * 1024) { toast.error('Image trop volumineuse (max 2 Mo).'); return }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPhoto(reader.result as string)
+      // No avatar upload endpoint yet — preview is local only, not persisted.
+      toast.success('Photo chargée (aperçu local — non enregistrée sur le serveur).')
+    }
+    reader.readAsDataURL(file)
+  }
+  function onPhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) processPhoto(file)
   }
 
   const strength = (() => {
@@ -73,21 +105,33 @@ export default function ProfilePage() {
         <div className="card">
           <div className="card-body" style={{ paddingTop: 24 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onPhotoPick} />
               <div style={{ position: 'relative', width: 72, height: 72 }}>
-                <div className="avatar" style={{ width: 72, height: 72, fontSize: 26, borderWidth: 1 }}>SY</div>
+                {photo ? (
+                  <img src={photo} alt="avatar" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--line-strong)' }} />
+                ) : (
+                  <div className="avatar" style={{ width: 72, height: 72, fontSize: 26, borderWidth: 1 }}>{userInitials}</div>
+                )}
                 <button className="pf-edit" title="Changer la photo" onClick={() => setPhotoZone((v) => !v)}><Icon name="edit" size={13} /></button>
               </div>
 
               {photoZone && (
-                <div className="pf-drop">
+                <div
+                  className="pf-drop"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => photoInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) processPhoto(f) }}
+                >
                   <Icon name="upload" size={20} />
                   <div style={{ fontWeight: 700, fontSize: 12.5, marginTop: 6 }}>Glisser une photo ou cliquer pour choisir</div>
                   <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>JPG, PNG — max 2 Mo</div>
+                  {photo && <button className="btn ghost sm" style={{ marginTop: 10 }} onClick={(e) => { e.stopPropagation(); setPhoto(null) }}>Retirer la photo</button>}
                 </div>
               )}
 
-              <div style={{ fontWeight: 700, fontSize: 15.5, marginTop: 14 }}>Dr SANNI Yawa Justine</div>
-              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Chef de département · INH</div>
+              <div style={{ fontWeight: 700, fontSize: 15.5, marginTop: 14 }}>{baseName}</div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>{roleLabel}{deptShort !== '—' ? ` · ${deptShort}` : ''}</div>
             </div>
 
             <div className="divider" style={{ margin: '18px 0' }} />
@@ -97,12 +141,12 @@ export default function ProfilePage() {
                 <span className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>Email</span>
                 <span className="row" style={{ gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--ink-2)' }}>
                   <span style={{ color: 'var(--muted-2)' }}><Icon name="lock" size={13} /></span>
-                  <span className="mono" style={{ fontSize: 12 }}>sanni.yawa@sante.gouv.tg</span>
+                  <span className="mono" style={{ fontSize: 12 }}>{email}</span>
                 </span>
               </div>
               <div className="between" style={{ padding: '9px 0', borderBottom: '1px solid var(--line)', gap: 12 }}>
                 <span className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>Rôle</span>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Chef de département</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{roleLabel}</span>
               </div>
               <div className="between" style={{ padding: '9px 0', gap: 12 }}>
                 <span className="muted" style={{ fontSize: 12.5, fontWeight: 600 }}>Membre depuis</span>
@@ -145,7 +189,7 @@ export default function ProfilePage() {
                 <label>Adresse email</label>
                 <div className="readonly-field">
                   <span style={{ color: 'var(--muted-2)' }}><Icon name="lock" size={14} /></span>
-                  <span className="mono" style={{ fontSize: 13 }}>sanni.yawa@sante.gouv.tg</span>
+                  <span className="mono" style={{ fontSize: 13 }}>{email}</span>
                 </div>
               </div>
             </div>

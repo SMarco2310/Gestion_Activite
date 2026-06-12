@@ -2,48 +2,54 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { StatusBadge } from '../../components/ui/common'
-import { ACTIVITIES, DEPTS, STATUS, type Activity } from '../../lib/mock'
+import { DEPTS } from '../../lib/mock'
+import { useCalendarActivities } from '../../hooks/useActivities'
+import { deptMeta, STATUS_LABEL, STATUS_FILTERS, fmtRange, type ApiCalendarActivity, type ApiActivityStatus } from '../../lib/api'
 
-interface Popover {
-  act: Activity
-  x: number
-  y: number
-}
+interface Popover { act: ApiCalendarActivity; x: number; y: number }
+
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+const DOWS = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim']
 
 export default function CalendarPage() {
   const navigate = useNavigate()
+  const [cursor, setCursor] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() } })
   const [deptFilter, setDeptFilter] = useState<string[]>(Object.keys(DEPTS))
-  const [statusFilter, setStatusFilter] = useState('Tous')
-  const [range, setRange] = useState('mois')
+  const [statusFilter, setStatusFilter] = useState<'Tous' | ApiActivityStatus>('Tous')
   const [popover, setPopover] = useState<Popover | null>(null)
 
-  const toggleDept = (id: string) =>
-    setDeptFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
+  const monthStart = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-01`
+  const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate()
+  const monthEnd = `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+  const { data: acts = [] } = useCalendarActivities({ from: monthStart, to: monthEnd })
 
-  const daysInMonth = 30
-  const firstDow = 0
+  const toggleDept = (id: string) => setDeptFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]))
+
+  const firstDow = (new Date(cursor.y, cursor.m, 1).getDay() + 6) % 7
   const cells: (number | null)[] = []
   for (let i = 0; i < firstDow; i++) cells.push(null)
   for (let d = 1; d <= daysInMonth; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
 
-  const conflictDays = new Set([2, 3, 4, 5])
-  const rangeWindow = ({ mois: [1, 30], s1: [1, 7], s2: [8, 14], s3: [15, 21], s4: [22, 30] } as Record<string, number[]>)[range]
+  const matches = (a: ApiCalendarActivity) =>
+    (deptFilter.includes(a.department) || !(a.department in DEPTS)) &&
+    (statusFilter === 'Tous' || a.status === statusFilter)
 
-  const matches = (a: Activity) =>
-    deptFilter.includes(a.dept) && (statusFilter === 'Tous' || a.status === statusFilter) && a.startD > 0
+  const dayIso = (d: number) => `${cursor.y}-${String(cursor.m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  const actsOnDay = (d: number) => acts.filter((a) => matches(a) && a.startDate <= dayIso(d) && a.endDate >= dayIso(d))
 
-  const actsOnDay = (d: number) =>
-    ACTIVITIES.filter((a) => matches(a) && a.startD <= d && a.endD >= d && d >= rangeWindow[0] && d <= rangeWindow[1])
+  const today = new Date()
+  const todayNum = today.getFullYear() === cursor.y && today.getMonth() === cursor.m ? today.getDate() : -1
 
-  const dows = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim']
+  const prevMonth = () => setCursor((c) => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }))
+  const nextMonth = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }))
 
   return (
     <div className="content" onClick={() => setPopover(null)}>
       <div className="page-head">
         <div>
           <h1 className="page-title">Calendrier général</h1>
-          <p className="page-desc">Toutes les activités institutionnelles · juin 2026</p>
+          <p className="page-desc">Toutes les activités institutionnelles · {MONTHS_FR[cursor.m]} {cursor.y}</p>
         </div>
         <button className="btn primary" onClick={() => navigate('/activities/new')}>
           <Icon name="plus" size={17} /> Nouvelle activité
@@ -60,104 +66,56 @@ export default function CalendarPage() {
             {Object.values(DEPTS).map((d) => {
               const on = deptFilter.includes(d.id)
               return (
-                <button
-                  key={d.id}
-                  className="chip"
-                  onClick={() => toggleDept(d.id)}
-                  style={{
-                    height: 32,
-                    fontSize: 12.5,
-                    borderColor: on ? d.color : 'var(--line-strong)',
-                    background: on ? d.bg : 'var(--card)',
-                    color: on ? d.color : 'var(--muted)',
-                  }}
-                >
+                <button key={d.id} className="chip" onClick={() => toggleDept(d.id)}
+                  style={{ height: 32, fontSize: 12.5, borderColor: on ? d.color : 'var(--line-strong)', background: on ? d.bg : 'var(--card)', color: on ? d.color : 'var(--muted)' }}>
                   <span style={{ width: 9, height: 9, borderRadius: 2, background: on ? d.color : 'var(--muted-2)' }} />
                   {d.short}
                 </button>
               )
             })}
           </div>
-          <div className="row" style={{ gap: 10 }}>
-            <select className="select" style={{ height: 34, width: 160 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="Tous">Tous les statuts</option>
-              {Object.keys(STATUS).map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-            <select className="select" style={{ height: 34, width: 150 }} value={range} onChange={(e) => setRange(e.target.value)}>
-              <option value="mois">Tout le mois</option>
-              <option value="s1">1 – 7 juin</option>
-              <option value="s2">8 – 14 juin</option>
-              <option value="s3">15 – 21 juin</option>
-              <option value="s4">22 – 30 juin</option>
-            </select>
-          </div>
+          <select className="select" style={{ height: 34, width: 160 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'Tous' | ApiActivityStatus)}>
+            <option value="Tous">Tous les statuts</option>
+            {STATUS_FILTERS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </select>
         </div>
       </div>
 
       {/* Calendar grid */}
       <div className="card" style={{ overflow: 'hidden' }}>
         <div className="between" style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}>
-          <h2 className="card-title" style={{ fontSize: 16 }}>Juin 2026</h2>
+          <h2 className="card-title" style={{ fontSize: 16 }}>{MONTHS_FR[cursor.m][0].toUpperCase() + MONTHS_FR[cursor.m].slice(1)} {cursor.y}</h2>
           <div className="row" style={{ gap: 8 }}>
-            <button className="iconbtn" style={{ width: 32, height: 32 }}><Icon name="chevronLeft" size={16} /></button>
-            <button className="iconbtn" style={{ width: 32, height: 32 }}><Icon name="chevronRight" size={16} /></button>
+            <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={(e) => { e.stopPropagation(); prevMonth() }}><Icon name="chevronLeft" size={16} /></button>
+            <button className="iconbtn" style={{ width: 32, height: 32 }} onClick={(e) => { e.stopPropagation(); nextMonth() }}><Icon name="chevronRight" size={16} /></button>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)' }}>
-          {dows.map((d) => (
+          {DOWS.map((d) => (
             <div key={d} style={{ padding: '9px 12px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--muted)', borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)' }}>{d}</div>
           ))}
           {cells.map((d, i) => {
-            const acts = d ? actsOnDay(d) : []
-            const hasConflict = d && conflictDays.has(d) && deptFilter.length > 0
-            const dim = d && (d < rangeWindow[0] || d > rangeWindow[1])
+            const dayActs = d ? actsOnDay(d) : []
+            const hasConflict = dayActs.some((a) => a._count?.conflictsAsMain > 0)
             return (
-              <div
-                key={i}
-                style={{
-                  minHeight: 116,
-                  borderBottom: '1px solid var(--line)',
-                  borderRight: '1px solid var(--line)',
-                  padding: '7px 7px 8px',
-                  background: d ? (dim ? 'var(--bg)' : 'var(--card)') : '#FBFCFD',
-                  opacity: dim ? 0.5 : 1,
-                }}
-              >
+              <div key={i} style={{ minHeight: 116, borderBottom: '1px solid var(--line)', borderRight: '1px solid var(--line)', padding: '7px 7px 8px', background: d ? 'var(--card)' : '#FBFCFD' }}>
                 {d && (
                   <div className="between" style={{ marginBottom: 5 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: d === 4 ? 'var(--blue-700)' : 'var(--ink-2)', background: d === 4 ? 'var(--blue-50)' : 'transparent', borderRadius: 4, padding: '1px 6px' }}>{String(d).padStart(2, '0')}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: d === todayNum ? 'var(--blue-700)' : 'var(--ink-2)', background: d === todayNum ? 'var(--blue-50)' : 'transparent', borderRadius: 4, padding: '1px 6px' }}>{String(d).padStart(2, '0')}</span>
                     {hasConflict && <span title="Conflit ce jour" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)' }} />}
                   </div>
                 )}
                 <div className="stack" style={{ gap: 3 }}>
-                  {acts.slice(0, 3).map((a) => (
-                    <div
-                      key={a.id}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPopover({ act: a, x: e.clientX, y: e.clientY })
-                      }}
-                      title={a.title}
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: DEPTS[a.dept].color,
-                        background: DEPTS[a.dept].bg,
-                        borderLeft: '3px solid ' + DEPTS[a.dept].color,
-                        borderRadius: 3,
-                        padding: '3px 6px',
-                        cursor: 'pointer',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {a.title}
-                    </div>
-                  ))}
-                  {acts.length > 3 && <div className="muted" style={{ fontSize: 11, fontWeight: 600, paddingLeft: 4 }}>+{acts.length - 3} autre(s)</div>}
+                  {dayActs.slice(0, 3).map((a) => {
+                    const dm = deptMeta(a.department)
+                    return (
+                      <div key={a.id} onClick={(e) => { e.stopPropagation(); setPopover({ act: a, x: e.clientX, y: e.clientY }) }} title={a.title}
+                        style={{ fontSize: 11, fontWeight: 600, color: dm.color, background: dm.bg, borderLeft: '3px solid ' + dm.color, borderRadius: 3, padding: '3px 6px', cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {a.title}
+                      </div>
+                    )
+                  })}
+                  {dayActs.length > 3 && <div className="muted" style={{ fontSize: 11, fontWeight: 600, paddingLeft: 4 }}>+{dayActs.length - 3} autre(s)</div>}
                 </div>
               </div>
             )
@@ -182,42 +140,32 @@ export default function CalendarPage() {
       </div>
 
       {/* Popover */}
-      {popover && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: 'fixed',
-            zIndex: 50,
-            left: Math.min(popover.x, window.innerWidth - 320),
-            top: Math.min(popover.y + 10, window.innerHeight - 260),
-            width: 300,
-            background: 'var(--card)',
-            border: '1px solid var(--line-strong)',
-            borderRadius: 8,
-            boxShadow: '0 8px 28px rgba(20,40,70,.16)',
-          }}
-        >
-          <div style={{ height: 4, background: DEPTS[popover.act.dept].color, borderRadius: '8px 8px 0 0' }} />
-          <div style={{ padding: '14px 16px' }}>
-            <div className="between" style={{ marginBottom: 8 }}>
-              <span className="badge" style={{ color: DEPTS[popover.act.dept].color, background: DEPTS[popover.act.dept].bg, borderColor: DEPTS[popover.act.dept].line }}>{DEPTS[popover.act.dept].short}</span>
-              <button className="iconbtn" style={{ width: 26, height: 26, border: 'none' }} onClick={() => setPopover(null)}><Icon name="x" size={15} /></button>
-            </div>
-            <div style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{popover.act.title}</div>
-            <div className="stack" style={{ gap: 7, marginTop: 11 }}>
-              <div className="row" style={{ gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}><span style={{ color: 'var(--muted)' }}><Icon name="building" size={15} /></span>{DEPTS[popover.act.dept].name}</div>
-              <div className="row" style={{ gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}><span style={{ color: 'var(--muted)' }}><Icon name="calendar" size={15} /></span>{String(popover.act.startD).padStart(2, '0')} – {String(popover.act.endD).padStart(2, '0')} juin 2026</div>
-              <div className="row" style={{ gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}><span style={{ color: 'var(--muted)' }}><Icon name="users" size={15} /></span>{popover.act.people.length} participants</div>
-            </div>
-            <div className="between" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
-              <StatusBadge status={popover.act.status} />
-              <button className="btn primary sm" onClick={() => navigate(`/activities/${popover.act.id}`)}>
-                Détails <Icon name="arrowRight" size={14} />
-              </button>
+      {popover && (() => {
+        const dm = deptMeta(popover.act.department)
+        return (
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', zIndex: 50, left: Math.min(popover.x, window.innerWidth - 320), top: Math.min(popover.y + 10, window.innerHeight - 240), width: 300, background: 'var(--card)', border: '1px solid var(--line-strong)', borderRadius: 8, boxShadow: '0 8px 28px rgba(20,40,70,.16)' }}>
+            <div style={{ height: 4, background: dm.color, borderRadius: '8px 8px 0 0' }} />
+            <div style={{ padding: '14px 16px' }}>
+              <div className="between" style={{ marginBottom: 8 }}>
+                <span className="badge" style={{ color: dm.color, background: dm.bg, borderColor: dm.line }}>{dm.short}</span>
+                <button className="iconbtn" style={{ width: 26, height: 26, border: 'none' }} onClick={() => setPopover(null)}><Icon name="x" size={15} /></button>
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{popover.act.title}</div>
+              <div className="stack" style={{ gap: 7, marginTop: 11 }}>
+                <div className="row" style={{ gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}><span style={{ color: 'var(--muted)' }}><Icon name="building" size={15} /></span>{dm.name || popover.act.department}</div>
+                <div className="row" style={{ gap: 8, fontSize: 12.5, color: 'var(--ink-2)' }}><span style={{ color: 'var(--muted)' }}><Icon name="calendar" size={15} /></span>{fmtRange(popover.act.startDate, popover.act.endDate)}</div>
+              </div>
+              <div className="between" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                <StatusBadge status={STATUS_LABEL[popover.act.status]} />
+                <button className="btn primary sm" onClick={() => navigate(`/activities/${popover.act.id}`)}>
+                  Détails <Icon name="arrowRight" size={14} />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

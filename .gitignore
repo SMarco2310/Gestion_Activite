@@ -8,3 +8,6 @@ logs/
 *.log
 dist/
 .env.local
+server/.env
+
+*.env

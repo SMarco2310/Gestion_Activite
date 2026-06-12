@@ -1,8 +1,8 @@
-import { Router } from 'express'
+import { Router, type Router as RouterType } from 'express'
 import { getNotifications, markAsRead, markAllAsRead } from '../controllers/notifications.controller'
 import { authenticate } from '../middleware/auth.middleware'
 
-const router = Router()
+const router: RouterType = Router()
 
 router.use(authenticate)
 

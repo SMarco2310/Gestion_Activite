@@ -1,52 +1,47 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { DET_PARTICIPANTS, initials } from '../../lib/mock'
-
-interface Row {
-  id: number
-  name: string
-  role: string
-  status?: string
-}
+import { initials } from '../../lib/mock'
+import { useActivity, useAddParticipant, useUpdateParticipant, useRemoveParticipant } from '../../hooks/useActivities'
 
 export default function ManageParticipantsPage() {
   const navigate = useNavigate()
-  const { id = 'A1' } = useParams()
+  const { id } = useParams()
+  const { data: activity, isLoading } = useActivity(id)
+  const addMut = useAddParticipant(id || '')
+  const updateMut = useUpdateParticipant(id || '')
+  const removeMut = useRemoveParticipant(id || '')
 
-  const seed: Row[] = DET_PARTICIPANTS.map((p, i) => ({ id: i, name: p.name, role: p.role, status: p.status }))
-  const editSeedIdx = Math.max(0, seed.findIndex((p) => /ASSIH/.test(p.name)))
-  const [rows, setRows] = useState<Row[]>(seed)
-  const [editId, setEditId] = useState<number | null>(editSeedIdx)
-  const [draft, setDraft] = useState({ name: seed[editSeedIdx]?.name || '', role: seed[editSeedIdx]?.role || '' })
+  const [editId, setEditId] = useState<string | null>(null)
+  const [draft, setDraft] = useState({ name: '', role: '' })
   const [nName, setNName] = useState('')
   const [nRole, setNRole] = useState('')
 
+  const rows = (activity?.participants ?? []).filter((p) => p.participantType === 'participant')
   const total = rows.length
-  const conflictCount = rows.filter((r) => r.status === 'Conflit').length
-  const availCount = rows.filter((r) => r.status !== 'Conflit').length
+  const conflictCount = rows.filter((r) => r.availabilityStatus === 'conflit').length
+  const availCount = total - conflictCount
 
-  function startEdit(r: Row) {
-    setEditId(r.id)
-    setDraft({ name: r.name, role: r.role })
+  function startEdit(pid: string, name: string, role: string) {
+    setEditId(pid)
+    setDraft({ name, role })
   }
   function saveEdit() {
-    setRows((rs) => rs.map((r) => (r.id === editId ? { ...r, name: draft.name, role: draft.role } : r)))
-    setEditId(null)
-  }
-  function cancelEdit() {
-    setEditId(null)
-  }
-  function removeRow(rid: number) {
-    setRows((rs) => rs.filter((r) => r.id !== rid))
-    if (editId === rid) setEditId(null)
+    if (!editId || !draft.name.trim()) return
+    updateMut.mutate(
+      { participantId: editId, fullName: draft.name.trim(), titleRole: draft.role.trim() },
+      { onSuccess: () => setEditId(null) },
+    )
   }
   function addRow() {
     if (!nName.trim()) return
-    setRows((rs) => [...rs, { id: Date.now(), name: nName.trim(), role: nRole.trim() || '—', status: 'Disponible' }])
-    setNName('')
-    setNRole('')
+    addMut.mutate(
+      { fullName: nName.trim(), titleRole: nRole.trim() || '—' },
+      { onSuccess: () => { setNName(''); setNRole('') } },
+    )
   }
+
+  if (isLoading) return <div className="content"><div className="muted" style={{ padding: 40 }}>Chargement…</div></div>
 
   return (
     <div className="content">
@@ -54,7 +49,7 @@ export default function ManageParticipantsPage() {
       <div className="row" style={{ gap: 7, fontSize: 12.5, color: 'var(--muted)', fontWeight: 600, marginBottom: 14, flexWrap: 'wrap', rowGap: 4 }}>
         <span className="crumb" onClick={() => navigate('/activities')}>Mes activités</span>
         <Icon name="chevronRight" size={13} />
-        <span className="crumb" onClick={() => navigate(`/activities/${id}`)} style={{ maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Atelier de rédaction…</span>
+        <span className="crumb" onClick={() => navigate(`/activities/${id}`)} style={{ maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activity?.title || 'Activité'}</span>
         <Icon name="chevronRight" size={13} />
         <span style={{ color: 'var(--ink-2)' }}>Gérer les participants</span>
       </div>
@@ -64,7 +59,7 @@ export default function ManageParticipantsPage() {
         <div style={{ minWidth: 0 }}>
           <h1 className="page-title">Gérer les participants</h1>
           <p className="page-desc" style={{ marginTop: 6 }}>
-            Atelier de rédaction et d'élaboration de drafts de manuscrits scientifiques · <span className="mono">INH/2026/041</span>
+            {activity?.title} · <span className="mono">{activity?.referenceNumber || '—'}</span>
           </p>
         </div>
         <button className="btn" style={{ flex: 'none' }} onClick={() => navigate(`/activities/${id}`)}><Icon name="chevronLeft" size={16} /> Retour à l'activité</button>
@@ -104,9 +99,12 @@ export default function ManageParticipantsPage() {
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={5} className="muted" style={{ padding: 24, textAlign: 'center' }}>Aucun participant.</td></tr>
+            )}
             {rows.map((r, i) => {
               const editing = editId === r.id
-              const conflict = r.status === 'Conflit'
+              const conflict = r.availabilityStatus === 'conflit'
               return (
                 <tr key={r.id} style={{ background: editing ? 'var(--blue-50)' : i % 2 ? '#FAFBFC' : 'var(--card)' }}>
                   <td className="muted" style={{ fontWeight: 700 }}>{String(i + 1).padStart(2, '0')}</td>
@@ -118,8 +116,8 @@ export default function ManageParticipantsPage() {
                       </div>
                     ) : (
                       <div className="person">
-                        <div className="pa" style={conflict ? { background: 'var(--red-bg)', color: 'var(--red)' } : undefined}>{(initials(r.name) || 'N').toUpperCase()}</div>
-                        <div className="pn">{r.name}</div>
+                        <div className="pa" style={conflict ? { background: 'var(--red-bg)', color: 'var(--red)' } : undefined}>{(initials(r.fullName) || 'N').toUpperCase()}</div>
+                        <div className="pn">{r.fullName}</div>
                       </div>
                     )}
                   </td>
@@ -127,12 +125,14 @@ export default function ManageParticipantsPage() {
                     {editing ? (
                       <input className="input" style={{ height: 34 }} value={draft.role} onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value }))} placeholder="Titre / Rôle" />
                     ) : (
-                      <span className="muted">{r.role}</span>
+                      <span className="muted">{r.titleRole}</span>
                     )}
                   </td>
                   <td>
                     {conflict ? (
                       <span className="badge red"><span className="pip" />Conflit</span>
+                    ) : r.availabilityStatus === 'nouveau' ? (
+                      <span className="badge blue"><span className="pip" />Nouveau</span>
                     ) : (
                       <span className="badge green"><span className="pip" />Disponible</span>
                     )}
@@ -140,13 +140,13 @@ export default function ManageParticipantsPage() {
                   <td>
                     {editing ? (
                       <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                        <button className="btn sm primary" onClick={saveEdit}><Icon name="check" size={14} /> Sauvegarder</button>
-                        <button className="btn sm" onClick={cancelEdit}><Icon name="x" size={14} /> Annuler</button>
+                        <button className="btn sm primary" disabled={updateMut.isPending} onClick={saveEdit}><Icon name="check" size={14} /> Sauvegarder</button>
+                        <button className="btn sm" onClick={() => setEditId(null)}><Icon name="x" size={14} /> Annuler</button>
                       </div>
                     ) : (
                       <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                        <button className="iconbtn" style={{ width: 32, height: 32 }} title="Modifier" onClick={() => startEdit(r)}><Icon name="edit" size={15} /></button>
-                        <button className="iconbtn" style={{ width: 32, height: 32 }} title="Retirer" onClick={() => removeRow(r.id)}><Icon name="trash" size={15} /></button>
+                        <button className="iconbtn" style={{ width: 32, height: 32 }} title="Modifier" onClick={() => startEdit(r.id, r.fullName, r.titleRole)}><Icon name="edit" size={15} /></button>
+                        <button className="iconbtn" style={{ width: 32, height: 32 }} title="Retirer" disabled={removeMut.isPending} onClick={() => removeMut.mutate(r.id)}><Icon name="trash" size={15} /></button>
                       </div>
                     )}
                   </td>
@@ -172,8 +172,7 @@ export default function ManageParticipantsPage() {
             </div>
           </div>
           <div className="between" style={{ marginTop: 16, flexWrap: 'wrap', gap: 12 }}>
-            <button className="btn primary" disabled={!nName.trim()} onClick={addRow}><Icon name="plus" size={16} /> Ajouter à la liste</button>
-            <button className="link" onClick={() => navigate('/activities/new')} style={{ fontSize: 13 }}><Icon name="upload" size={15} /> Importer depuis un document TDR</button>
+            <button className="btn primary" disabled={!nName.trim() || addMut.isPending} onClick={addRow}><Icon name="plus" size={16} /> Ajouter à la liste</button>
           </div>
         </div>
       </div>

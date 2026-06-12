@@ -1,8 +1,35 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import Icon, { type IconName } from '../../components/ui/Icon'
 import { Person, StatusBadge } from '../../components/ui/common'
-import { AVAILABLE, DEPTS, STAFF } from '../../lib/mock'
+import { AVAILABLE, DEPTS, STAFF, initials } from '../../lib/mock'
+import { useCreateActivity } from '../../hooks/useActivities'
+import { useExtractDocument } from '../../hooks/useDocuments'
+import type { ApiActivityType } from '../../lib/api'
+
+const TYPE_TO_ENUM: Record<string, ApiActivityType> = {
+  Atelier: 'atelier',
+  Formation: 'formation',
+  Mission: 'mission',
+  Réunion: 'reunion',
+  Autre: 'autre',
+}
+
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+function fmtDate(iso: string) {
+  if (!iso) return '—'
+  const [y, m, d] = iso.split('-')
+  return `${d} ${MONTHS_FR[Number(m) - 1]} ${y}`
+}
+function fmtRange(start: string, end: string) {
+  if (!start) return '—'
+  const [ys, ms, ds] = start.split('-')
+  if (!end || end === start) return fmtDate(start)
+  const [ye, me, de] = end.split('-')
+  if (ys === ye && ms === me) return `${ds} – ${de} ${MONTHS_FR[Number(ms) - 1]} ${ye}`
+  return `${fmtDate(start)} – ${fmtDate(end)}`
+}
 
 function Stepper({ step }: { step: number }) {
   const steps = ['Informations', 'Participants', 'Document', 'Confirmation']
@@ -45,22 +72,11 @@ function Stepper({ step }: { step: number }) {
   )
 }
 
-interface PType { id: string; status: 'Disponible' | 'Conflit' }
-
-const EXTRACTED = {
-  fields: { title: "Atelier de validation du plan d'action sectoriel", dept: 'INH', type: 'Atelier', start: '2026-06-16', end: '2026-06-17', venue: 'Hôtel SARAKAWA, Lomé', ref: '' },
-  found: { title: true, dept: true, type: true, start: true, end: true, venue: true, ref: false } as Record<string, boolean>,
-  participants: [
-    { id: 'sanni', status: 'Disponible' },
-    { id: 'tossa', status: 'Disponible' },
-    { id: 'foli', status: 'Disponible' },
-    { id: 'assih', status: 'Conflit' },
-  ] as PType[],
-}
+interface PType { id: string; status: 'Disponible' | 'Conflit' | 'Nouveau'; ext?: { name: string; role: string } }
 
 export default function NewActivityPage() {
   const navigate = useNavigate()
-  const [view, setView] = useState<'gate' | 'upload' | 'verify' | 'form'>('gate')
+  const [view, setView] = useState<'gate' | 'upload' | 'verify' | 'form' | 'success'>('gate')
   const [step, setStep] = useState(1)
   const [autofilled, setAutofilled] = useState<Record<string, boolean> | null>(null)
   const [f, setF] = useState({ title: '', dept: 'INH', type: 'Atelier', start: '', end: '', venue: '', ref: '', urgent: false })
@@ -73,7 +89,78 @@ export default function NewActivityPage() {
   const [query, setQuery] = useState('')
   const [file, setFile] = useState<{ name: string; size: string; type: string } | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newRole, setNewRole] = useState('')
+  const [redirectProgress, setRedirectProgress] = useState(0)
+  const [resultConflicts, setResultConflicts] = useState<string[]>([])
+  const createMut = useCreateActivity()
+  const extractMut = useExtractDocument()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }))
+
+  function buildParticipants() {
+    return participants.map((pp) =>
+      pp.ext
+        ? { fullName: pp.ext.name, titleRole: pp.ext.role }
+        : { fullName: STAFF[pp.id].name, titleRole: `${STAFF[pp.id].role} · ${DEPTS[STAFF[pp.id].dept].short}` },
+    )
+  }
+
+  function submitActivity() {
+    if (!f.title.trim() || !f.start || !f.end || !f.venue.trim()) {
+      toast.error('Renseignez au minimum le titre, les dates et le lieu.')
+      return
+    }
+    createMut.mutate(
+      {
+        title: f.title.trim(),
+        referenceNumber: f.ref.trim() || undefined,
+        type: TYPE_TO_ENUM[f.type] || 'autre',
+        department: f.dept,
+        startDate: f.start,
+        endDate: f.end,
+        venue: f.venue.trim(),
+        isUrgent: f.urgent,
+        participants: buildParticipants(),
+      },
+      {
+        onSuccess: (res) => {
+          setResultConflicts([...new Set(res.conflicts.map((c) => c.participantName))])
+          setView('success')
+        },
+        onError: (e) =>
+          toast.error((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Erreur lors de la soumission'),
+      },
+    )
+  }
+
+  function processFile(fl: File) {
+    setFile({ name: fl.name, size: `${Math.round(fl.size / 1024)} Ko`, type: fl.type.includes('pdf') ? 'pdf' : 'word' })
+    extractMut.mutate(fl, {
+      onSuccess: (ex) => {
+        setF((p) => ({
+          ...p,
+          title: ex.title || p.title,
+          ref: ex.referenceNumber || p.ref,
+          type: ex.type ? Object.keys(TYPE_TO_ENUM).find((k) => TYPE_TO_ENUM[k] === ex.type?.toLowerCase()) || p.type : p.type,
+          dept: ex.department || p.dept,
+          start: ex.startDate || p.start,
+          end: ex.endDate || p.end,
+          venue: ex.venue || p.venue,
+        }))
+        setAutofilled({
+          title: !!ex.title, ref: !!ex.referenceNumber, type: !!ex.type,
+          dept: !!ex.department, start: !!ex.startDate, end: !!ex.endDate, venue: !!ex.venue,
+        })
+        if (ex.participants?.length) {
+          setParticipants(ex.participants.map((pp, i) => ({ id: 'ext-' + i, status: 'Nouveau', ext: { name: pp.fullName, role: pp.titleRole } })))
+        }
+        setView('verify')
+      },
+      onError: () => toast.error('Extraction automatique indisponible — saisissez les informations manuellement.'),
+    })
+  }
 
   function startManual() {
     setF({ title: '', dept: 'INH', type: 'Atelier', start: '', end: '', venue: '', ref: '', urgent: false })
@@ -87,14 +174,6 @@ export default function NewActivityPage() {
     setStep(1)
     setView('form')
   }
-  function importDoc() {
-    setFile({ name: 'TDR_Atelier_validation_plan_action.pdf', size: '312 Ko', type: 'pdf' })
-    setF((p) => ({ ...p, ...EXTRACTED.fields, urgent: false }))
-    setParticipants(EXTRACTED.participants)
-    setAutofilled(EXTRACTED.found)
-    setView('verify')
-  }
-
   const types = ['Atelier', 'Formation', 'Mission', 'Réunion', 'Autre']
   const addable = Object.values(STAFF).filter(
     (s) =>
@@ -110,6 +189,25 @@ export default function NewActivityPage() {
     const repl = AVAILABLE.find((rid) => !participants.find((p) => p.id === rid))
     if (repl) setParticipants((p) => p.map((x) => (x.id === id ? { id: repl, status: 'Disponible' } : x)))
   }
+  const addExternal = () => {
+    if (!newName.trim()) return
+    setParticipants((p) => [...p, { id: 'ext-' + Date.now(), status: 'Nouveau', ext: { name: newName.trim(), role: newRole.trim() || 'Externe' } }])
+    setNewName('')
+    setNewRole('')
+    setShowNew(false)
+  }
+  const renderPerson = (pp: PType) =>
+    pp.ext ? (
+      <div className="person">
+        <div className="pa">{initials(pp.ext.name).toUpperCase()}</div>
+        <div className="stack" style={{ flex: 1, minWidth: 0 }}>
+          <div className="pn">{pp.ext.name}</div>
+          <div className="pr">{pp.ext.role}</div>
+        </div>
+      </div>
+    ) : (
+      <Person id={pp.id} conflict={pp.status === 'Conflit'} />
+    )
   const conflicts = participants.filter((p) => p.status === 'Conflit').length
   const canNext = step === 1 ? Boolean(f.title.trim() && f.start && f.end) : true
 
@@ -122,7 +220,19 @@ export default function NewActivityPage() {
     upload: 'Téléversez le document de termes de référence à analyser',
     verify: 'Vérifiez les informations extraites de votre document',
     form: 'Soumettez les termes de référence et la liste des participants',
+    success: '',
   }[view]
+
+  useEffect(() => {
+    if (view !== 'success') return
+    setRedirectProgress(0)
+    const grow = setTimeout(() => setRedirectProgress(100), 60)
+    const go = setTimeout(() => navigate(resultConflicts.length > 0 ? '/conflicts' : '/activities'), 5000)
+    return () => {
+      clearTimeout(grow)
+      clearTimeout(go)
+    }
+  }, [view, resultConflicts.length, navigate])
 
   /* ============ GATE ============ */
   if (view === 'gate') {
@@ -178,15 +288,24 @@ export default function NewActivityPage() {
         </div>
         <div className="card">
           <div className="card-body" style={{ padding: '24px 26px' }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf"
+              style={{ display: 'none' }}
+              onChange={(e) => { const fl = e.target.files?.[0]; if (fl) processFile(fl); e.target.value = '' }}
+            />
             <div
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); importDoc() }}
-              onClick={importDoc}
-              style={{ border: '1.5px dashed ' + (dragOver ? 'var(--blue)' : 'var(--line-strong)'), background: dragOver ? 'var(--blue-50)' : 'var(--bg)', borderRadius: 8, padding: '54px 20px', textAlign: 'center', cursor: 'pointer' }}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); const fl = e.dataTransfer.files?.[0]; if (fl) processFile(fl) }}
+              onClick={() => !extractMut.isPending && fileInputRef.current?.click()}
+              style={{ border: '1.5px dashed ' + (dragOver ? 'var(--blue)' : 'var(--line-strong)'), background: dragOver ? 'var(--blue-50)' : 'var(--bg)', borderRadius: 8, padding: '54px 20px', textAlign: 'center', cursor: extractMut.isPending ? 'wait' : 'pointer' }}
             >
               <div style={{ color: 'var(--blue)', display: 'flex', justifyContent: 'center', marginBottom: 14 }}><Icon name="fileImport" size={34} /></div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Glissez votre fichier ici, ou cliquez pour parcourir</div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>
+                {extractMut.isPending ? 'Analyse du document en cours…' : 'Glissez votre fichier ici, ou cliquez pour parcourir'}
+              </div>
               <div className="muted" style={{ fontSize: 13, marginTop: 5 }}>PDF ou Word (.doc, .docx) · 10 Mo max</div>
             </div>
             <div className="row" style={{ gap: 10, marginTop: 18, color: 'var(--blue-700)' }}>
@@ -324,6 +443,117 @@ export default function NewActivityPage() {
     )
   }
 
+  /* ============ SUCCESS ============ */
+  if (view === 'success') {
+    const conflictCount = resultConflicts.length
+    const hasConflict = conflictCount > 0
+    const summary: [string, ReactNode][] = [
+      ['Titre', f.title || 'Activité sans titre'],
+      ['Référence', <span className="mono" key="ref">{f.ref || '—'}</span>],
+      ['Dates', fmtRange(f.start, f.end)],
+      ['Lieu', f.venue || '—'],
+      ['Participants', participants.length],
+      [
+        'Statut',
+        hasConflict ? (
+          <span className="badge red" key="st"><span className="pip" />{conflictCount} conflit{conflictCount > 1 ? 's' : ''}</span>
+        ) : (
+          <span className="badge green" key="st"><span className="pip" />Soumis</span>
+        ),
+      ],
+    ]
+    return (
+      <div className="content" style={{ maxWidth: 760 }}>
+        <div className="row" style={{ gap: 8, marginBottom: 18, fontSize: 13, color: 'var(--muted)' }}>
+          <span className="crumb" onClick={() => navigate('/activities')}>Mes activités</span>
+          <Icon name="chevronRight" size={14} />
+          <span className="crumb" onClick={() => setView('form')}>Nouvelle activité</span>
+          <Icon name="chevronRight" size={14} />
+          <span style={{ color: 'var(--ink)', fontWeight: 600 }}>Soumission réussie</span>
+        </div>
+
+        <div className="card" style={{ maxWidth: 600, margin: '0 auto', padding: '36px 40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+            <span
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: hasConflict ? 'var(--amber-bg)' : 'var(--green-bg)',
+                color: hasConflict ? 'var(--amber)' : 'var(--green)',
+              }}
+            >
+              <Icon name={hasConflict ? 'alert' : 'check'} size={32} />
+            </span>
+          </div>
+
+          <h1 style={{ textAlign: 'center', fontSize: 22, fontWeight: 800, letterSpacing: '-0.01em' }}>
+            {hasConflict ? `Activité soumise — ${conflictCount} conflit${conflictCount > 1 ? 's' : ''} détecté${conflictCount > 1 ? 's' : ''}` : 'Activité soumise avec succès !'}
+          </h1>
+          <p className="muted" style={{ textAlign: 'center', fontSize: 14, marginTop: 8, lineHeight: 1.5, maxWidth: 420, marginInline: 'auto' }}>
+            {hasConflict
+              ? "L'activité a été enregistrée, mais des conflits de planning ont été détectés."
+              : 'Votre activité a été enregistrée et est maintenant visible dans le calendrier partagé.'}
+          </p>
+
+          {hasConflict && (
+            <div style={{ border: '1px solid var(--amber-line)', background: 'var(--amber-bg)', borderRadius: 8, padding: '14px 16px', marginTop: 22 }}>
+              <div className="row" style={{ gap: 10, alignItems: 'flex-start', color: 'var(--amber)' }}>
+                <span style={{ marginTop: 1 }}><Icon name="alert" size={17} /></span>
+                <span style={{ fontSize: 13, color: 'var(--ink-2)', fontWeight: 600, lineHeight: 1.5 }}>
+                  {conflictCount} participant{conflictCount > 1 ? 's sont programmés' : ' est programmé'} sur des activités qui se chevauchent sur la même période. Arbitrez ces conflits avant le démarrage de l'activité.
+                </span>
+              </div>
+              <div style={{ borderTop: '1px solid var(--amber-line)', marginTop: 12, paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {resultConflicts.map((name) => (
+                  <div key={name} className="row" style={{ gap: 8, fontSize: 13 }}>
+                    <span className="pip" style={{ background: 'var(--red)', flex: 'none' }} />
+                    <span style={{ fontWeight: 700 }}>{name}</span>
+                    <span className="muted">— Chevauchement détecté sur la période</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ border: '1px solid var(--line)', borderRadius: 8, marginTop: 22, overflow: 'hidden' }}>
+            {summary.map(([k, v], i) => (
+              <div key={k} className="between" style={{ padding: '13px 18px', borderBottom: i < summary.length - 1 ? '1px solid var(--line)' : 'none', background: 'var(--bg)' }}>
+                <span className="muted" style={{ fontSize: 13 }}>{k}</span>
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {hasConflict ? (
+            <button className="btn primary" style={{ width: '100%', marginTop: 22, background: 'var(--amber)', borderColor: 'var(--amber)' }} onClick={() => navigate('/conflicts')}>
+              Gérer les conflits <Icon name="arrowRight" size={16} />
+            </button>
+          ) : (
+            <button className="btn primary" style={{ width: '100%', marginTop: 22 }} onClick={() => navigate('/activities')}>
+              Voir l'activité <Icon name="arrowRight" size={16} />
+            </button>
+          )}
+          <button className="btn ghost" style={{ width: '100%', marginTop: 10, color: 'var(--blue-700)', fontWeight: 700 }} onClick={() => navigate(hasConflict ? '/activities' : '/dashboard')}>
+            {hasConflict ? "Voir l'activité d'abord" : 'Retour à mes activités'}
+          </button>
+
+          <div style={{ marginTop: 22, textAlign: 'center' }}>
+            <div className="muted" style={{ fontSize: 12.5, fontStyle: 'italic', marginBottom: 8 }}>
+              Redirection automatique vers {hasConflict ? 'les conflits' : "l'activité"} dans 5 secondes…
+            </div>
+            <div style={{ height: 5, background: 'var(--line)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: redirectProgress + '%', background: 'var(--green)', transition: 'width 4.9s linear' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   /* ============ FORM (4-step wizard) ============ */
   return (
     <div className="content" style={{ maxWidth: 1000 }}>
@@ -419,14 +649,53 @@ export default function NewActivityPage() {
                 )}
               </div>
 
+              {!showNew ? (
+                <button
+                  className="between"
+                  onClick={() => setShowNew(true)}
+                  style={{ width: '100%', border: '1.5px dashed var(--line-strong)', background: 'var(--bg)', borderRadius: 8, padding: '14px 16px', cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+                >
+                  <span className="row" style={{ gap: 10, color: 'var(--ink-2)', fontWeight: 600, fontSize: 13.5 }}>
+                    <Icon name="users" size={18} /> Ajouter un participant non enregistré dans le système
+                  </span>
+                  <span className="row" style={{ gap: 7, color: 'var(--blue-700)', fontWeight: 700, fontSize: 13 }}>
+                    <Icon name="plus" size={15} /> Nouveau
+                  </span>
+                </button>
+              ) : (
+                <div className="card" style={{ padding: '16px 18px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 12 }}>Nouveau participant non enregistré</div>
+                  <div className="grid-2" style={{ marginBottom: 12 }}>
+                    <div className="field">
+                      <label>Nom complet</label>
+                      <input className="input" placeholder="ex. Dr ADANSI Komla" value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+                    </div>
+                    <div className="field">
+                      <label>Fonction / Structure</label>
+                      <input className="input" placeholder="ex. Épidémiologiste, GIZ · Externe" value={newRole} onChange={(e) => setNewRole(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+                    <button className="btn" onClick={() => { setShowNew(false); setNewName(''); setNewRole('') }}>Annuler</button>
+                    <button className="btn primary" disabled={!newName.trim()} onClick={addExternal}><Icon name="plus" size={15} /> Ajouter</button>
+                  </div>
+                </div>
+              )}
+
               <div className="card">
                 {participants.map((pp, idx) => {
                   const conflict = pp.status === 'Conflit'
                   return (
                     <div key={pp.id} className="between" style={{ padding: '12px 16px', borderBottom: idx < participants.length - 1 ? '1px solid var(--line)' : 'none', background: conflict ? 'var(--red-bg)' : 'transparent' }}>
-                      <Person id={pp.id} conflict={conflict} />
+                      {renderPerson(pp)}
                       <div className="row" style={{ gap: 10 }}>
-                        {conflict ? <span className="badge red"><span className="pip" />Conflit</span> : <span className="badge green"><span className="pip" />Disponible</span>}
+                        {conflict ? (
+                          <span className="badge red"><span className="pip" />Conflit</span>
+                        ) : pp.status === 'Nouveau' ? (
+                          <span className="badge blue"><span className="pip" />Nouveau</span>
+                        ) : (
+                          <span className="badge green"><span className="pip" />Disponible</span>
+                        )}
                         {conflict && <button className="btn sm" onClick={() => replacePerson(pp.id)}><Icon name="swap" size={14} /> Remplacer</button>}
                         <button className="iconbtn" style={{ width: 30, height: 30 }} title="Retirer" onClick={() => removePerson(pp.id)}><Icon name="x" size={15} /></button>
                       </div>
@@ -503,8 +772,8 @@ export default function NewActivityPage() {
                   <div style={{ padding: '6px 0' }}>
                     {participants.map((pp) => (
                       <div key={pp.id} className="between" style={{ padding: '8px 16px' }}>
-                        <Person id={pp.id} conflict={pp.status === 'Conflit'} />
-                        {pp.status === 'Conflit' ? <span className="badge red">Conflit</span> : <span className="badge green">Disponible</span>}
+                        {renderPerson(pp)}
+                        {pp.status === 'Conflit' ? <span className="badge red">Conflit</span> : pp.status === 'Nouveau' ? <span className="badge blue">Nouveau</span> : <span className="badge green">Disponible</span>}
                       </div>
                     ))}
                   </div>
@@ -542,7 +811,9 @@ export default function NewActivityPage() {
           {step < 4 ? (
             <button className="btn primary" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>Continuer <Icon name="chevronRight" size={16} /></button>
           ) : (
-            <button className="btn primary" onClick={() => navigate('/dashboard')}><Icon name="send" size={15} /> Soumettre l'activité</button>
+            <button className="btn primary" disabled={createMut.isPending} onClick={submitActivity}>
+              <Icon name="send" size={15} /> {createMut.isPending ? 'Soumission…' : "Soumettre l'activité"}
+            </button>
           )}
         </div>
       </div>

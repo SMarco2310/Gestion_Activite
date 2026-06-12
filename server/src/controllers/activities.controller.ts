@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { query, queryOne, execute, withTransaction } from '../lib/db'
 import { conflictService } from '../services/conflict.service'
 import { exportService } from '../services/export.service'
+import { getActivityOwner, canMutateActivity } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -197,11 +198,14 @@ export const updateActivity = async (req: AuthRequest, res: Response) => {
     const { id } = req.params
     const updateData = req.body as Record<string, unknown>
 
-    const existing = await queryOne<{ startDate: string; endDate: string }>(
-      'SELECT "startDate", "endDate" FROM activities WHERE id = $1',
+    const existing = await queryOne<{ startDate: string; endDate: string; submittedById: string }>(
+      'SELECT "startDate", "endDate", "submittedById" FROM activities WHERE id = $1',
       [id]
     )
     if (!existing) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
+    if (!canMutateActivity(existing.submittedById, req.user!)) {
+      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à modifier cette activité' })
+    }
 
     const datesChanged =
       (updateData.startDate != null && updateData.startDate !== existing.startDate) ||
@@ -238,7 +242,7 @@ export const updateActivity = async (req: AuthRequest, res: Response) => {
     })
 
     // Re-run conflict detection if dates changed
-    if (datesChanged) await conflictService.detectConflicts(id, req.user!.id)
+    if (datesChanged) await conflictService.detectConflicts(id as string, req.user!.id)
 
     res.json({ success: true, data: activity })
   } catch (error) {
@@ -250,6 +254,11 @@ export const updateActivity = async (req: AuthRequest, res: Response) => {
 export const deleteActivity = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
+    const owner = await getActivityOwner(id as string)
+    if (owner == null) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
+    if (!canMutateActivity(owner, req.user!)) {
+      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à supprimer cette activité' })
+    }
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE activities SET status = 'archive', "updatedAt" = now() WHERE id = $1`,
@@ -301,7 +310,7 @@ export const getCalendarActivities = async (req: AuthRequest, res: Response) => 
 
 export const exportActivityPdf = async (req: AuthRequest, res: Response) => {
   try {
-    const pdf = await exportService.generatePdf(req.params.id)
+    const pdf = await exportService.generatePdf(req.params.id as string)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="participants-${req.params.id}.pdf"`)
     res.send(pdf)
@@ -313,7 +322,7 @@ export const exportActivityPdf = async (req: AuthRequest, res: Response) => {
 
 export const exportActivityExcel = async (req: AuthRequest, res: Response) => {
   try {
-    const excel = await exportService.generateExcel(req.params.id)
+    const excel = await exportService.generateExcel(req.params.id as string)
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename="participants-${req.params.id}.xlsx"`)
     res.send(excel)

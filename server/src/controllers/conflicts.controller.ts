@@ -1,6 +1,7 @@
 import { Response } from 'express'
 import crypto from 'crypto'
 import { query, queryOne, withTransaction } from '../lib/db'
+import { canMutateActivity } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -46,11 +47,16 @@ export const resolveConflict = async (req: AuthRequest, res: Response) => {
     const { id } = req.params
     const { resolution, replacementName, replacementRole } = req.body
 
-    const conflict = await queryOne<{ id: string; activityId: string; participantName: string }>(
-      'SELECT id, "activityId", "participantName" FROM conflicts WHERE id = $1',
+    const conflict = await queryOne<{ id: string; activityId: string; participantName: string; submittedById: string }>(
+      `SELECT c.id, c."activityId", c."participantName", a."submittedById"
+       FROM conflicts c JOIN activities a ON a.id = c."activityId"
+       WHERE c.id = $1`,
       [id]
     )
     if (!conflict) return res.status(404).json({ success: false, error: 'Conflit non trouvé' })
+    if (!canMutateActivity(conflict.submittedById, req.user!)) {
+      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à arbitrer ce conflit' })
+    }
 
     await withTransaction(async (client) => {
       // Update conflict status

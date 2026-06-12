@@ -2,33 +2,30 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { StatusBadge } from '../../components/ui/common'
-import { ACTIVITIES, CONFLICTS, DEPTS, STATUS, type Activity } from '../../lib/mock'
+import { useActivities } from '../../hooks/useActivities'
+import { deptMeta, STATUS_LABEL, TYPE_LABEL, fmtRange, STATUS_FILTERS, type ApiActivityStatus } from '../../lib/api'
 
 export default function ActivitiesPage() {
   const navigate = useNavigate()
   const [q, setQ] = useState('')
-  const [status, setStatus] = useState('Tous')
-  const conflictStaff = new Set(CONFLICTS.map((c) => c.staff))
+  const [status, setStatus] = useState<'Tous' | ApiActivityStatus>('Tous')
 
-  const rows = ACTIVITIES.filter(
+  const { data, isLoading } = useActivities(status === 'Tous' ? undefined : { status })
+  const activities = data?.data ?? []
+
+  const rows = activities.filter(
     (a) =>
-      (status === 'Tous' || a.status === status) &&
-      (q.trim() === '' || a.title.toLowerCase().includes(q.toLowerCase()) || a.ref.toLowerCase().includes(q.toLowerCase())),
+      q.trim() === '' ||
+      a.title.toLowerCase().includes(q.toLowerCase()) ||
+      (a.referenceNumber || '').toLowerCase().includes(q.toLowerCase()),
   )
-  const hasConflict = (a: Activity) =>
-    a.people.some((p) => conflictStaff.has(p)) && CONFLICTS.some((c) => c.activities.includes(a.id))
-
-  const dateLabel = (a: Activity) =>
-    a.startD > 0
-      ? `${String(a.startD).padStart(2, '0')}${a.endD !== a.startD ? '–' + String(a.endD).padStart(2, '0') : ''} juin 2026`
-      : '26–27 mai 2026'
 
   return (
     <div className="content">
       <div className="page-head">
         <div>
           <h1 className="page-title">Mes activités</h1>
-          <p className="page-desc">Toutes les activités soumises par l'Institut National d'Hygiène</p>
+          <p className="page-desc">Toutes les activités soumises sur la plateforme</p>
         </div>
         <button className="btn primary" onClick={() => navigate('/activities/new')}>
           <Icon name="plus" size={17} /> Nouvelle activité
@@ -50,9 +47,12 @@ export default function ActivitiesPage() {
             />
           </div>
           <div className="row" style={{ gap: 8 }}>
-            {['Tous', ...Object.keys(STATUS)].map((s) => (
+            <button className={'chip' + (status === 'Tous' ? ' on' : '')} style={{ height: 34, fontSize: 12.5 }} onClick={() => setStatus('Tous')}>
+              Tous
+            </button>
+            {STATUS_FILTERS.map((s) => (
               <button key={s} className={'chip' + (status === s ? ' on' : '')} style={{ height: 34, fontSize: 12.5 }} onClick={() => setStatus(s)}>
-                {s}
+                {STATUS_LABEL[s]}
               </button>
             ))}
           </div>
@@ -69,36 +69,46 @@ export default function ActivitiesPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((a) => (
-              <tr key={a.id} className="clickable" onClick={() => navigate(`/activities/${a.id}`)}>
-                <td>
-                  <div className="row" style={{ gap: 9 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: DEPTS[a.dept].color, flex: 'none' }} />
-                    <div>
-                      <div className="act-title">{a.title}</div>
-                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>{a.ref}</div>
+            {isLoading && (
+              <tr><td colSpan={6} className="muted" style={{ padding: 24, textAlign: 'center' }}>Chargement…</td></tr>
+            )}
+            {!isLoading && rows.length === 0 && (
+              <tr><td colSpan={6} className="muted" style={{ padding: 24, textAlign: 'center' }}>Aucune activité trouvée.</td></tr>
+            )}
+            {rows.map((a) => {
+              const dm = deptMeta(a.department)
+              const hasConflict = (a._count?.conflictsAsMain ?? 0) > 0
+              return (
+                <tr key={a.id} className="clickable" onClick={() => navigate(`/activities/${a.id}`)}>
+                  <td>
+                    <div className="row" style={{ gap: 9 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: dm.color, flex: 'none' }} />
+                      <div>
+                        <div className="act-title">{a.title}</div>
+                        <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>{a.referenceNumber || '—'}</div>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td className="muted">{a.type}</td>
-                <td className="muted">{dateLabel(a)}</td>
-                <td className="muted" style={{ maxWidth: 200 }}>{a.venue}</td>
-                <td>
-                  <span className="row" style={{ gap: 8 }}>
-                    <span style={{ fontWeight: 700 }}>{a.people.length}</span>
-                    {hasConflict(a) && (
-                      <span className="badge red" style={{ fontSize: 10.5 }}>
-                        <span className="pip" />
-                        Conflit
-                      </span>
-                    )}
-                  </span>
-                </td>
-                <td>
-                  <StatusBadge status={a.status} />
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="muted">{TYPE_LABEL[a.type]}</td>
+                  <td className="muted">{fmtRange(a.startDate, a.endDate)}</td>
+                  <td className="muted" style={{ maxWidth: 200 }}>{a.venue}</td>
+                  <td>
+                    <span className="row" style={{ gap: 8 }}>
+                      <span style={{ fontWeight: 700 }}>{a._count?.participants ?? 0}</span>
+                      {hasConflict && (
+                        <span className="badge red" style={{ fontSize: 10.5 }}>
+                          <span className="pip" />
+                          {a._count.conflictsAsMain} conflit{a._count.conflictsAsMain > 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <StatusBadge status={STATUS_LABEL[a.status]} />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

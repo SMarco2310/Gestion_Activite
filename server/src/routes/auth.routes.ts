@@ -1,11 +1,11 @@
-import { Router } from 'express'
+import { Router, type Router as RouterType } from 'express'
 import { signUp, signIn, verifyEmail, getMe } from '../controllers/auth.controller'
 import { validate } from '../middleware/validate.middleware'
 import { authenticate } from '../middleware/auth.middleware'
 import { signUpSchema, signInSchema } from '@gestiactivites/shared'
 import rateLimit from 'express-rate-limit'
 
-const router = Router()
+const router: RouterType = Router()
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

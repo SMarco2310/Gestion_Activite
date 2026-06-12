@@ -37,9 +37,9 @@ export const documentService = {
         role: 'user',
         content: [
           {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-          },
+            type: 'document' as const,
+            source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64 },
+          } as unknown as { type: 'text'; text: string },
           {
             type: 'text',
             text: `Extract the following fields from this TDR document and return ONLY valid JSON with no markdown:

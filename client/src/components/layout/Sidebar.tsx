@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import Icon, { type IconName } from '../ui/Icon'
-import { CONFLICTS } from '../../lib/mock'
+import { useConflicts } from '../../hooks/useConflicts'
 
 interface NavEntry {
   to: string
@@ -20,7 +20,8 @@ const NAV: NavEntry[] = [
 ]
 
 export default function Sidebar() {
-  const conflictCount = CONFLICTS.length
+  const { data } = useConflicts()
+  const conflictCount = data?.total ?? 0
 
   return (
     <nav className="sidebar">

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { AuthShell } from '../../components/auth/AuthShell'
 import { DEPTS } from '../../lib/mock'
+import { useSignUp } from '../../hooks/useAuth'
 
 const GOV_DOMAINS = ['sante.gouv.tg', 'inh.tg', 'mshpcsua.tg']
 function isGovEmail(email: string) {
@@ -11,13 +12,13 @@ function isGovEmail(email: string) {
 }
 
 export default function SignUpPage() {
-  const navigate = useNavigate()
-  const [name, setName] = useState('Dr SANNI Yawa Justine')
-  const [email, setEmail] = useState('sanni.yawa@sante.gouv.tg')
+  const signUpMut = useSignUp()
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
   const [dept, setDept] = useState('INH')
   const [deptOther, setDeptOther] = useState('')
-  const [pw, setPw] = useState('Tg!2026Sante#')
-  const [pw2, setPw2] = useState('Tg!2026Sante#')
+  const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
   const [show1, setShow1] = useState(false)
   const [show2, setShow2] = useState(false)
 
@@ -37,6 +38,13 @@ export default function SignUpPage() {
     { label: 'fort', color: 'var(--green)' },
   ][strength]
   const match = pw.length > 0 && pw === pw2
+  const pwValid = pw.length >= 8 && /[A-Z]/.test(pw) && /[0-9]/.test(pw)
+  const canSubmit = name.trim().length >= 3 && emailValid && match && pwValid
+
+  function submit() {
+    if (!canSubmit) return
+    signUpMut.mutate({ fullName: name.trim(), email: email.trim(), password: pw, confirmPassword: pw2 })
+  }
 
   return (
     <AuthShell>
@@ -147,9 +155,10 @@ export default function SignUpPage() {
       <button
         className="btn primary"
         style={{ width: '100%', justifyContent: 'center', height: 42 }}
-        onClick={() => navigate('/verify-email')}
+        onClick={submit}
+        disabled={!canSubmit || signUpMut.isPending}
       >
-        Créer mon compte
+        {signUpMut.isPending ? 'Création…' : 'Créer mon compte'}
       </button>
       <p className="auth-fine">En créant un compte, vous acceptez les conditions d'utilisation de la plateforme.</p>
 
