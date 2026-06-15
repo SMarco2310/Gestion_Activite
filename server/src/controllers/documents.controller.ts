@@ -1,7 +1,7 @@
 import { Response } from 'express'
 import { documentService } from '../services/document.service'
 import { queryOne } from '../lib/db'
-import { getActivityOwner, canMutateActivity } from '../lib/authz'
+import { getActivityOwner, denyIfCannotMutate } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -12,10 +12,7 @@ export const uploadDocument = async (req: AuthRequest, res: Response) => {
     if (!activityId) return res.status(400).json({ success: false, error: 'activityId requis' })
 
     const owner = await getActivityOwner(activityId)
-    if (owner == null) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
-    if (!canMutateActivity(owner, req.user!)) {
-      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à ajouter un document à cette activité' })
-    }
+    if (denyIfCannotMutate(res, owner, req.user!, 'upload document', 'Vous n\'êtes pas autorisé à ajouter un document à cette activité')) return
 
     const document = await documentService.upload(req.file, activityId, req.user!.id)
     res.status(201).json({ success: true, data: document })
@@ -45,9 +42,7 @@ export const deleteDocument = async (req: AuthRequest, res: Response) => {
     if (!doc) return res.status(404).json({ success: false, error: 'Document non trouvé' })
 
     const owner = await getActivityOwner(doc.activityId)
-    if (!canMutateActivity(owner, req.user!)) {
-      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à supprimer ce document' })
-    }
+    if (denyIfCannotMutate(res, owner, req.user!, 'delete document', 'Vous n\'êtes pas autorisé à supprimer ce document')) return
 
     await documentService.delete(req.params.id as string)
     res.json({ success: true, message: 'Document supprimé' })

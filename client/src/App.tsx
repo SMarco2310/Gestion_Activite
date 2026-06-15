@@ -10,6 +10,7 @@ import AppLayout from './components/layout/AppLayout'
 import LoginPage from './pages/auth/LoginPage'
 import SignUpPage from './pages/auth/SignUpPage'
 import VerifyEmailPage from './pages/auth/VerifyEmailPage'
+import MagicLinkPage from './pages/auth/MagicLinkPage'
 
 // App pages
 import DashboardPage from './pages/dashboard/DashboardPage'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/auth/magic" element={<MagicLinkPage />} />
 
           {/* Protected app routes — with sidebar layout */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -58,7 +60,7 @@ export default function App() {
         </Routes>
       </BrowserRouter>
       <Toaster position="bottom-right" richColors />
-      <ReactQueryDevtools initialIsOpen={false} />
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   )
 }

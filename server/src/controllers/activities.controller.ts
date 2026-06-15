@@ -1,9 +1,9 @@
 import { Response } from 'express'
 import crypto from 'crypto'
-import { query, queryOne, execute, withTransaction } from '../lib/db'
+import { query, queryOne, withTransaction } from '../lib/db'
 import { conflictService } from '../services/conflict.service'
 import { exportService } from '../services/export.service'
-import { getActivityOwner, canMutateActivity } from '../lib/authz'
+import { getActivityOwner, denyIfCannotMutate } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -158,7 +158,7 @@ export const createActivity = async (req: AuthRequest, res: Response) => {
       await client.query(
         `INSERT INTO activity_history (id, "activityId", "eventType", "actorName", metadata)
          VALUES ($1, $2, 'cree', $3, '{}'::jsonb)`,
-        [crypto.randomUUID(), activityId, req.user!.fullName]
+        [crypto.randomUUID(), activityId, req.user!.username]
       )
 
       const createdParticipants = await client.query(
@@ -203,9 +203,7 @@ export const updateActivity = async (req: AuthRequest, res: Response) => {
       [id]
     )
     if (!existing) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
-    if (!canMutateActivity(existing.submittedById, req.user!)) {
-      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à modifier cette activité' })
-    }
+    if (denyIfCannotMutate(res, existing.submittedById, req.user!, 'update activity', 'Vous n\'êtes pas autorisé à modifier cette activité')) return
 
     const datesChanged =
       (updateData.startDate != null && updateData.startDate !== existing.startDate) ||
@@ -235,7 +233,7 @@ export const updateActivity = async (req: AuthRequest, res: Response) => {
       await client.query(
         `INSERT INTO activity_history (id, "activityId", "eventType", "actorName", metadata)
          VALUES ($1, $2, 'modifie', $3, $4::jsonb)`,
-        [crypto.randomUUID(), id, req.user!.fullName, JSON.stringify(updateData)]
+        [crypto.randomUUID(), id, req.user!.username, JSON.stringify(updateData)]
       )
 
       return row
@@ -255,10 +253,7 @@ export const deleteActivity = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params
     const owner = await getActivityOwner(id as string)
-    if (owner == null) return res.status(404).json({ success: false, error: 'Activité non trouvée' })
-    if (!canMutateActivity(owner, req.user!)) {
-      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à supprimer cette activité' })
-    }
+    if (denyIfCannotMutate(res, owner, req.user!, 'delete activity', 'Vous n\'êtes pas autorisé à supprimer cette activité')) return
     await withTransaction(async (client) => {
       await client.query(
         `UPDATE activities SET status = 'archive', "updatedAt" = now() WHERE id = $1`,
@@ -267,7 +262,7 @@ export const deleteActivity = async (req: AuthRequest, res: Response) => {
       await client.query(
         `INSERT INTO activity_history (id, "activityId", "eventType", "actorName", metadata)
          VALUES ($1, $2, 'statut_change', $3, $4::jsonb)`,
-        [crypto.randomUUID(), id, req.user!.fullName, JSON.stringify({ newStatus: 'archive' })]
+        [crypto.randomUUID(), id, req.user!.username, JSON.stringify({ newStatus: 'archive' })]
       )
     })
     res.json({ success: true, message: 'Activité archivée' })

@@ -9,9 +9,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: true, // listen on 0.0.0.0 so the dev container is reachable from the host
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        // Override with VITE_PROXY_TARGET when the API is in another container.
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:3001',
         changeOrigin: true,
       },
     },

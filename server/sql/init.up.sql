@@ -22,6 +22,11 @@ CREATE TABLE "users" (
   "emailVerified" BOOLEAN NOT NULL DEFAULT false,
   "emailVerifiedAt" TIMESTAMP(3),
   "verificationToken" TEXT,
+  "verificationTokenExpiresAt" TIMESTAMP(3),
+  "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
+  "lockedUntil" TIMESTAMP(3),
+  "magicLinkTokenHash" TEXT,
+  "magicLinkExpiresAt" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "users_pkey" PRIMARY KEY ("id")

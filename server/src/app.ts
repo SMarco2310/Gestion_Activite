@@ -24,8 +24,23 @@ const app: Express = express();
 // (not the proxy's) when deployed behind a reverse proxy / load balancer.
 app.set('trust proxy', 1)
 
+// Force HTTPS when FORCE_HTTPS=true (set this only when TLS is terminated in
+// front, e.g. behind a real reverse proxy — not for plain-HTTP compose runs).
+if (process.env.FORCE_HTTPS === 'true') {
+  app.use((req, res, next) => {
+    if (req.secure || req.headers['x-forwarded-proto'] === 'https') return next()
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`)
+    }
+    return res.status(403).json({ success: false, error: 'HTTPS requis' })
+  })
+}
+
 // ─── Security middleware ───────────────────────────────────────────
-app.use(helmet())
+// HSTS: tell browsers to only use HTTPS for the next year (incl. subdomains).
+app.use(helmet({
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+}))
 app.use(cors({
   origin: process.env.APP_URL || 'http://localhost:5173',
   credentials: true,

@@ -1,7 +1,7 @@
 import { Response } from 'express'
 import crypto from 'crypto'
 import { query, queryOne, withTransaction } from '../lib/db'
-import { canMutateActivity } from '../lib/authz'
+import { denyIfCannotMutate } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
@@ -54,9 +54,7 @@ export const resolveConflict = async (req: AuthRequest, res: Response) => {
       [id]
     )
     if (!conflict) return res.status(404).json({ success: false, error: 'Conflit non trouvé' })
-    if (!canMutateActivity(conflict.submittedById, req.user!)) {
-      return res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à arbitrer ce conflit' })
-    }
+    if (denyIfCannotMutate(res, conflict.submittedById, req.user!, 'resolve conflict', 'Vous n\'êtes pas autorisé à arbitrer ce conflit')) return
 
     await withTransaction(async (client) => {
       // Update conflict status
@@ -65,7 +63,7 @@ export const resolveConflict = async (req: AuthRequest, res: Response) => {
          SET status = 'resolu', resolution = $1::"ConflictResolution", "resolvedBy" = $2,
              "resolvedAt" = now(), "replacementName" = $3, "replacementRole" = $4
          WHERE id = $5`,
-        [resolution, req.user!.fullName, replacementName || null, replacementRole || null, id]
+        [resolution, req.user!.username, replacementName || null, replacementRole || null, id]
       )
 
       // Handle the participant change
@@ -91,7 +89,7 @@ export const resolveConflict = async (req: AuthRequest, res: Response) => {
         [
           crypto.randomUUID(),
           conflict.activityId,
-          req.user!.fullName,
+          req.user!.username,
           JSON.stringify({ resolution, participantName: conflict.participantName, replacementName }),
         ]
       )

@@ -2,22 +2,14 @@ import { Response } from 'express'
 import crypto from 'crypto'
 import { queryOne, execute } from '../lib/db'
 import { conflictService } from '../services/conflict.service'
-import { getActivityOwner, canMutateActivity } from '../lib/authz'
+import { getActivityOwner, denyIfCannotMutate } from '../lib/authz'
 import logger from '../lib/logger'
 import { AuthRequest } from '../middleware/auth.middleware'
 
 /** Returns true if it already sent a 403/404 response. */
 async function denyIfNotOwner(activityId: string, req: AuthRequest, res: Response): Promise<boolean> {
   const owner = await getActivityOwner(activityId)
-  if (owner == null) {
-    res.status(404).json({ success: false, error: 'Activité non trouvée' })
-    return true
-  }
-  if (!canMutateActivity(owner, req.user!)) {
-    res.status(403).json({ success: false, error: 'Vous n\'êtes pas autorisé à modifier les participants de cette activité' })
-    return true
-  }
-  return false
+  return denyIfCannotMutate(res, owner, req.user!, 'mutate participants', 'Vous n\'êtes pas autorisé à modifier les participants de cette activité')
 }
 
 export const addParticipant = async (req: AuthRequest, res: Response) => {

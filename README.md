@@ -1,5 +1,7 @@
 # GestiActivités
 
+![CI](https://github.com/SMarco2310/Gestion_Activite/actions/workflows/ci.yml/badge.svg)
+
 Plateforme de gestion des activités institutionnelles — Ministère de la Santé et de l'Hygiène Publique, République Togolaise.
 
 ## Stack

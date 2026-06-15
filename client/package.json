@@ -6,7 +6,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext ts,tsx"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.14",

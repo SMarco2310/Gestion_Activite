@@ -1,15 +1,54 @@
-version: '3.8'
+# Production-style stack: postgres + API + nginx-served SPA.
+#   docker compose up --build        → app on http://localhost:8080
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: gestiactivites
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-    ports:
-      - '5432:5432'
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Auto-loads the schema on first boot (empty data dir only).
+      - ./server/sql/init.up.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d gestiactivites']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    # Secrets (JWT_SECRET, RESEND_API_KEY, SUPABASE_*, ANTHROPIC_API_KEY) come
+    # from server/.env; the values below override DB + runtime for the container.
+    env_file:
+      - ./server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@postgres:5432/gestiactivites
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      # Set FORCE_HTTPS=true only when real TLS is terminated in front.
+      FORCE_HTTPS: ${FORCE_HTTPS:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '3001:3001'
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - '8080:80'
 
 volumes:
   postgres_data:

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 
 export interface AuthRequest extends Request {
-  user?: { id: string; email: string; role: string; fullName: string }
+  user?: { id: string; role: string; username: string }
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -14,7 +14,7 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET!) as {
-      id: string; email: string; role: string; fullName: string
+      id: string; role: string; username: string
     }
     req.user = decoded
     next()
