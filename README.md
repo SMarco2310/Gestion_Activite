@@ -1,6 +1,7 @@
 # GestiActivités
 
-![CI](https://github.com/SMarco2310/Gestion_Activite/actions/workflows/ci.yml/badge.svg)
+<!-- Jenkins badge: replace JENKINS_URL with your controller host (needs the Embeddable Build Status plugin). -->
+[![Build Status](https://JENKINS_URL/buildStatus/icon?job=Gestion_Activite)](https://JENKINS_URL/job/Gestion_Activite/)
 
 Plateforme de gestion des activités institutionnelles — Ministère de la Santé et de l'Hygiène Publique, République Togolaise.
 
